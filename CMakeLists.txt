@@ -1,0 +1,3 @@
+cmake_minimum_required(VERSION 3.1)
+project(evaluation_3d_bounding_box CXX)
+add_executable(evaluate_object_3d evaluate_object_3d_offline.cpp)

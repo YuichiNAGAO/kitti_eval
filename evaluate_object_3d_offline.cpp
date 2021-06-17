@@ -144,12 +144,12 @@ vector<tDetection> loadDetections(string file_name, bool &compute_aos,
     tDetection d;
     double trash;
     char str[255];
-    if (fscanf(fp, "%s %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf",
+    if (fscanf(fp, "%s %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf",
                    str, &trash, &trash, &d.box.alpha, &d.box.x1, &d.box.y1,
                    &d.box.x2, &d.box.y2, &d.h, &d.w, &d.l, &d.t1, &d.t2, &d.t3,
-                   &d.ry, &d.thresh)==16) {
+                   &d.ry)==15) {
 
-        // d.thresh = 1;
+      d.thresh = 1;
       d.box.type = str;
       detections.push_back(d);
 
@@ -177,7 +177,7 @@ vector<tDetection> loadDetections(string file_name, bool &compute_aos,
 }
 
 vector<tGroundtruth> loadGroundtruth(string file_name,bool &success) {
-
+  cout<<file_name<<endl;
   // holds all ground truth (ignored ground truth is indicated by an index vector
   vector<tGroundtruth> groundtruth;
   FILE *fp = fopen(file_name.c_str(),"r");
@@ -199,17 +199,26 @@ vector<tGroundtruth> loadGroundtruth(string file_name,bool &success) {
   }
   fclose(fp);
   success = true;
+
+
   return groundtruth;
 }
 
-void saveStats (const vector<double> &precision, const vector<double> &aos, FILE *fp_det, FILE *fp_ori) {
+void saveStats (const vector<double> &precision, const vector<double> &aos, const vector<double> &recall, FILE *fp_det, FILE *fp_ori) {
 
   // save precision to file
   if(precision.empty())
     return;
-  for (int32_t i=0; i<precision.size(); i++)
-    fprintf(fp_det,"%f ",precision[i]);
+  // for (int32_t i=0; i<precision.size(); i++)
+  //   fprintf(fp_det,"%f ",precision[i]);
+  fprintf(fp_det,"%s ","Precision");
+  fprintf(fp_det,"%s ","Recall");
   fprintf(fp_det,"\n");
+  
+  fprintf(fp_det,"%f ",precision[0]);
+  fprintf(fp_det,"%f ",recall[0]);
+  fprintf(fp_det,"\n");
+
 
   // save orientation similarity, only if there were no invalid orientation entries in submission (alpha=-10)
   if(aos.empty())
@@ -408,8 +417,8 @@ void cleanData(CLASSES current_class, const vector<tGroundtruth> &gt, const vect
     // ground truth is ignored, if occlusion, truncation exceeds the difficulty or ground truth is too small
     // (doesn't count as FN nor TP, although detections may be assigned)
     bool ignore = false;
-    if(gt[i].occlusion>MAX_OCCLUSION[difficulty] || gt[i].truncation>MAX_TRUNCATION[difficulty] || height<MIN_HEIGHT[difficulty])
-      ignore = true;
+    // if(gt[i].occlusion>MAX_OCCLUSION[difficulty] || gt[i].truncation>MAX_TRUNCATION[difficulty] || height<MIN_HEIGHT[difficulty])
+    //   ignore = true;
 
     // set ignored vector for ground truth
     // current class and not ignored (total no. of ground truth is detected for recall denominator)
@@ -442,12 +451,12 @@ void cleanData(CLASSES current_class, const vector<tGroundtruth> &gt, const vect
     else
       valid_class = -1;
 
-    int32_t height = fabs(det[i].box.y1 - det[i].box.y2);
+    // int32_t height = fabs(det[i].box.y1 - det[i].box.y2);
 
     // set ignored vector for detections
-    if(height<MIN_HEIGHT[difficulty])
-      ignored_det.push_back(1);
-    else if(valid_class==1)
+    // if(height<MIN_HEIGHT[difficulty])
+    //   ignored_det.push_back(1);
+    if(valid_class==1)
       ignored_det.push_back(0);
     else
       ignored_det.push_back(-1);
@@ -460,6 +469,7 @@ tPrData computeStatistics(CLASSES current_class, const vector<tGroundtruth> &gt,
         bool compute_fp, double (*boxoverlap)(tDetection, tGroundtruth, int32_t),
         METRIC metric, bool compute_aos=false, double thresh=0, bool debug=false){
 
+  cout<<"computeStatistics!!!!!"<<endl;
   tPrData stat = tPrData();
   const double NO_DETECTION = -10000000;
   vector<double> delta;            // holds angular difference for TPs (needed for AOS evaluation)
@@ -467,19 +477,29 @@ tPrData computeStatistics(CLASSES current_class, const vector<tGroundtruth> &gt,
   assigned_detection.assign(det.size(), false);
   vector<bool> ignored_threshold;
   ignored_threshold.assign(det.size(), false); // holds detections with a threshold lower than thresh if FP are computed
+  
+  cout<<"gt.size():"<<det.size()<<endl;
+  cout<<"det.size():"<<det.size()<<endl;
+  
 
   // detections with a low score are ignored for computing precision (needs FP)
   if(compute_fp)
-    for(int32_t i=0; i<det.size(); i++)
+    for(int32_t i=0; i<det.size(); i++){
       if(det[i].thresh<thresh)
         ignored_threshold[i] = true;
+
+    }
+      
 
   // evaluate all ground truth boxes
   for(int32_t i=0; i<gt.size(); i++){
 
     // this ground truth is not of the current or a neighboring class and therefore ignored
-    if(ignored_gt[i]==-1)
+    if(ignored_gt[i]==-1){
       continue;
+
+    }
+      
 
     /*=======================================================================
     find candidates (overlap with ground truth > 0.5) (logical len(det))
@@ -493,15 +513,20 @@ tPrData computeStatistics(CLASSES current_class, const vector<tGroundtruth> &gt,
     for(int32_t j=0; j<det.size(); j++){
 
       // detections not of the current class, already assigned or with a low threshold are ignored
-      if(ignored_det[j]==-1)
-        continue;
-      if(assigned_detection[j])
-        continue;
-      if(ignored_threshold[j])
-        continue;
+      if(ignored_det[j]==-1){
+        continue;      
+      }
+
+      if(assigned_detection[j]){
+        continue;      
+      }
+      if(ignored_threshold[j]){
+        continue;      
+      }
 
       // find the maximum score for the candidates and get idx of respective detection
       double overlap = boxoverlap(det[j], gt[i], -1);
+      cout<<"overlap det:"<<j<<" gt:"<<i<<" "<<overlap<<endl;
 
       // for computing recall thresholds, the candidate with highest score is considered
       if(!compute_fp && overlap>MIN_OVERLAP[metric][current_class] && det[j].thresh>valid_detection){
@@ -626,15 +651,26 @@ bool eval_class (FILE *fp_det, FILE *fp_ori, CLASSES current_class,
         DIFFICULTY difficulty, METRIC metric) {
     assert(groundtruth.size() == detections.size());
 
+  if (difficulty==0){
+    cout<<"-----------------EASY"<<endl;
+  }
+  if (difficulty==1){
+    cout<<"-----------------MODERATE"<<endl;
+  }
+  if (difficulty==2){
+    cout<<"-----------------DIFFICULT"<<endl;
+  }
   // init
   int32_t n_gt=0;                                     // total no. of gt (denominator of recall)
   vector<double> v, thresholds;                       // detection scores, evaluated for recall discretization
   vector< vector<int32_t> > ignored_gt, ignored_det;  // index of ignored gt detection for current class/difficulty
   vector< vector<tGroundtruth> > dontcare;            // index of dontcare areas, included in ground truth
 
+  cout<<"num groundtruth file:"<<groundtruth.size()<<endl;
   // for all test images do
   for (int32_t i=0; i<groundtruth.size(); i++){
 
+    cout<<i<<"/"<<groundtruth.size()<<endl;
     // holds ignored ground truth, ignored detections and dontcare areas for current frame
     vector<int32_t> i_gt, i_det;
     vector<tGroundtruth> dc;
@@ -648,7 +684,11 @@ bool eval_class (FILE *fp_det, FILE *fp_ori, CLASSES current_class,
     // compute statistics to get recall values
     tPrData pr_tmp = tPrData();
     pr_tmp = computeStatistics(current_class, groundtruth[i], detections[i], dc, i_gt, i_det, false, boxoverlap, metric);
-
+    cout<<"pr_tmp.tp"<<pr_tmp.tp<<endl;
+    cout<<"pr_tmp.fp"<<pr_tmp.fp<<endl;
+    cout<<"pr_tmp.fn"<<pr_tmp.fn<<endl;
+    cout<<"pr_tmp.similarity"<<pr_tmp.similarity<<endl;
+    cout<<"pr_tmp.v.size()"<<pr_tmp.v.size()<<endl;
     // add detection scores to vector over all images
     for(int32_t j=0; j<pr_tmp.v.size(); j++)
       v.push_back(pr_tmp.v[j]);
@@ -656,7 +696,8 @@ bool eval_class (FILE *fp_det, FILE *fp_ori, CLASSES current_class,
 
   // get scores that must be evaluated for recall discretization
   thresholds = getThresholds(v, n_gt);
-
+  cout<<"v.size()"<<v.size()<<endl;
+  cout<<"thresholds.size()"<<thresholds.size()<<endl;
   // compute TP,FP,FN for relevant scores
   vector<tPrData> pr;
   pr.assign(thresholds.size(),tPrData());
@@ -670,6 +711,11 @@ bool eval_class (FILE *fp_det, FILE *fp_ori, CLASSES current_class,
                               compute_aos, thresholds[t], t==38);
 
       // add no. of TP, FP, FN, AOS for current frame to total evaluation for current threshold
+      cout<<"tmp.tp"<<tmp.tp<<endl;
+      cout<<"tmp.fp"<<tmp.fp<<endl;
+      cout<<"tmp.fn"<<tmp.fn<<endl;
+      cout<<"tmp.similarity"<<tmp.similarity<<endl;
+      
       pr[t].tp += tmp.tp;
       pr[t].fp += tmp.fp;
       pr[t].fn += tmp.fn;
@@ -677,6 +723,7 @@ bool eval_class (FILE *fp_det, FILE *fp_ori, CLASSES current_class,
         pr[t].similarity += tmp.similarity;
     }
   }
+  cout<<"thresholds.size()"<<thresholds.size()<<endl;
 
   // compute recall, precision and AOS
   vector<double> recall;
@@ -692,6 +739,10 @@ bool eval_class (FILE *fp_det, FILE *fp_ori, CLASSES current_class,
       aos[i] = pr[i].similarity/(double)(pr[i].tp + pr[i].fp);
   }
 
+  // for (int iii=0; iii<precision.size();iii++){
+  //   cout<<"precision["<<iii<<"]"<<precision[iii]<<endl;
+  // }
+
   // filter precision and AOS using max_{i..end}(precision)
   for (int32_t i=0; i<thresholds.size(); i++){
     precision[i] = *max_element(precision.begin()+i, precision.end());
@@ -699,80 +750,84 @@ bool eval_class (FILE *fp_det, FILE *fp_ori, CLASSES current_class,
       aos[i] = *max_element(aos.begin()+i, aos.end());
   }
 
+  // for (int iii=0; iii<precision.size();iii++){
+  //   cout<<"precision["<<iii<<"]"<<precision[iii]<<endl;
+  // }
+
   // save statisics and finish with success
-  saveStats(precision, aos, fp_det, fp_ori);
+  saveStats(precision, aos, recall, fp_det, fp_ori);
     return true;
 }
 
-void saveAndPlotPlots(string dir_name,string file_name,string obj_type,vector<double> vals[],bool is_aos){
+// void saveAndPlotPlots(string dir_name,string file_name,string obj_type,vector<double> vals[],bool is_aos){
 
-  char command[1024];
+//   char command[1024];
 
-  // save plot data to file
-  FILE *fp = fopen((dir_name + "/" + file_name + ".txt").c_str(),"w");
-  printf("save %s\n", (dir_name + "/" + file_name + ".txt").c_str());
-  for (int32_t i=0; i<(int)N_SAMPLE_PTS; i++)
-    fprintf(fp,"%f %f %f %f\n",(double)i/(N_SAMPLE_PTS-1.0),vals[0][i],vals[1][i],vals[2][i]);
-  fclose(fp);
+//   // save plot data to file
+//   FILE *fp = fopen((dir_name + "/" + file_name + ".txt").c_str(),"w");
+//   printf("save %s\n", (dir_name + "/" + file_name + ".txt").c_str());
+//   for (int32_t i=0; i<(int)N_SAMPLE_PTS; i++)
+//     fprintf(fp,"%f %f %f %f\n",(double)i/(N_SAMPLE_PTS-1.0),vals[0][i],vals[1][i],vals[2][i]);
+//   fclose(fp);
 
-  float sum[3] = {0, 0, 0};
-  for (int v = 0; v < 3; ++v)
-      for (int i = 0; i < vals[v].size(); i = i + 4)
-          sum[v] += vals[v][i];
-  printf("%s AP: %f %f %f\n", file_name.c_str(), sum[0] / 11 * 100, sum[1] / 11 * 100, sum[2] / 11 * 100);
+//   float sum[3] = {0, 0, 0};
+//   for (int v = 0; v < 3; ++v)
+//       for (int i = 0; i < vals[v].size(); i = i + 4)
+//           sum[v] += vals[v][i];
+//   printf("%s AP: %f %f %f\n", file_name.c_str(), sum[0] / 11 * 100, sum[1] / 11 * 100, sum[2] / 11 * 100);
 
 
-  // create png + eps
-  for (int32_t j=0; j<2; j++) {
+//   // create png + eps
+//   for (int32_t j=0; j<2; j++) {
 
-    // open file
-    FILE *fp = fopen((dir_name + "/" + file_name + ".gp").c_str(),"w");
+//     // open file
+//     FILE *fp = fopen((dir_name + "/" + file_name + ".gp").c_str(),"w");
 
-    // save gnuplot instructions
-    if (j==0) {
-      fprintf(fp,"set term png size 450,315 font \"Helvetica\" 11\n");
-      fprintf(fp,"set output \"%s.png\"\n",file_name.c_str());
-    } else {
-      fprintf(fp,"set term postscript eps enhanced color font \"Helvetica\" 20\n");
-      fprintf(fp,"set output \"%s.eps\"\n",file_name.c_str());
-    }
+//     // save gnuplot instructions
+//     if (j==0) {
+//       fprintf(fp,"set term png size 450,315 font \"Helvetica\" 11\n");
+//       fprintf(fp,"set output \"%s.png\"\n",file_name.c_str());
+//     } else {
+//       fprintf(fp,"set term postscript eps enhanced color font \"Helvetica\" 20\n");
+//       fprintf(fp,"set output \"%s.eps\"\n",file_name.c_str());
+//     }
 
-    // set labels and ranges
-    fprintf(fp,"set size ratio 0.7\n");
-    fprintf(fp,"set xrange [0:1]\n");
-    fprintf(fp,"set yrange [0:1]\n");
-    fprintf(fp,"set xlabel \"Recall\"\n");
-    if (!is_aos) fprintf(fp,"set ylabel \"Precision\"\n");
-    else         fprintf(fp,"set ylabel \"Orientation Similarity\"\n");
-    obj_type[0] = toupper(obj_type[0]);
-    fprintf(fp,"set title \"%s\"\n",obj_type.c_str());
+//     // set labels and ranges
+//     fprintf(fp,"set size ratio 0.7\n");
+//     fprintf(fp,"set xrange [0:1]\n");
+//     fprintf(fp,"set yrange [0:1]\n");
+//     fprintf(fp,"set xlabel \"Recall\"\n");
+//     if (!is_aos) fprintf(fp,"set ylabel \"Precision\"\n");
+//     else         fprintf(fp,"set ylabel \"Orientation Similarity\"\n");
+//     obj_type[0] = toupper(obj_type[0]);
+//     fprintf(fp,"set title \"%s\"\n",obj_type.c_str());
 
-    // line width
-    int32_t   lw = 5;
-    if (j==0) lw = 3;
+//     // line width
+//     int32_t   lw = 5;
+//     if (j==0) lw = 3;
 
-    // plot error curve
-    fprintf(fp,"plot ");
-    fprintf(fp,"\"%s.txt\" using 1:2 title 'Easy' with lines ls 1 lw %d,",file_name.c_str(),lw);
-    fprintf(fp,"\"%s.txt\" using 1:3 title 'Moderate' with lines ls 2 lw %d,",file_name.c_str(),lw);
-    fprintf(fp,"\"%s.txt\" using 1:4 title 'Hard' with lines ls 3 lw %d",file_name.c_str(),lw);
+//     // plot error curve
+//     fprintf(fp,"plot ");
+//     fprintf(fp,"\"%s.txt\" using 1:2 title 'Easy' with lines ls 1 lw %d,",file_name.c_str(),lw);
+//     fprintf(fp,"\"%s.txt\" using 1:3 title 'Moderate' with lines ls 2 lw %d,",file_name.c_str(),lw);
+//     fprintf(fp,"\"%s.txt\" using 1:4 title 'Hard' with lines ls 3 lw %d",file_name.c_str(),lw);
 
-    // close file
-    fclose(fp);
+//     // close file
+//     fclose(fp);
 
-    // run gnuplot => create png + eps
-    sprintf(command,"cd %s; gnuplot %s",dir_name.c_str(),(file_name + ".gp").c_str());
-    system(command);
-  }
+//     // run gnuplot => create png + eps
+//     sprintf(command,"cd %s; gnuplot %s",dir_name.c_str(),(file_name + ".gp").c_str());
+//     system(command);
+//   }
 
-  // create pdf and crop
-  sprintf(command,"cd %s; ps2pdf %s.eps %s_large.pdf",dir_name.c_str(),file_name.c_str(),file_name.c_str());
-  system(command);
-  sprintf(command,"cd %s; pdfcrop %s_large.pdf %s.pdf",dir_name.c_str(),file_name.c_str(),file_name.c_str());
-  system(command);
-  sprintf(command,"cd %s; rm %s_large.pdf",dir_name.c_str(),file_name.c_str());
-  system(command);
-}
+//   // create pdf and crop
+//   sprintf(command,"cd %s; ps2pdf %s.eps %s_large.pdf",dir_name.c_str(),file_name.c_str(),file_name.c_str());
+//   system(command);
+//   sprintf(command,"cd %s; pdfcrop %s_large.pdf %s.pdf",dir_name.c_str(),file_name.c_str(),file_name.c_str());
+//   system(command);
+//   sprintf(command,"cd %s; rm %s_large.pdf",dir_name.c_str(),file_name.c_str());
+//   system(command);
+// }
 
 vector<int32_t> getEvalIndices(const string& result_dir) {
 
@@ -799,13 +854,13 @@ bool eval(string gt_dir, string result_dir, Mail* mail){
   // ground truth and result directories
   // string gt_dir         = "data/object/label_2";
   // string result_dir     = "results/" + result_sha;
-  string plot_dir       = result_dir + "/plot";
+  // string plot_dir       = result_dir + "/plot";
 
   // create output directories
-  system(("mkdir " + plot_dir).c_str());
+  // system(("mkdir " + plot_dir).c_str());
 
   // hold detections and ground truth in memory
-  vector< vector<tGroundtruth> > groundtruth;
+  vector< vector<tGroundtruth> > groundtruth;//[[ファイル1][,ファイル2],[ファイル3],...]
   vector< vector<tDetection> >   detections;
 
   // holds wether orientation similarity shall be computed (might be set to false while loading detections)
@@ -831,6 +886,24 @@ bool eval(string gt_dir, string result_dir, Mail* mail){
     vector<tGroundtruth> gt   = loadGroundtruth(gt_dir + "/" + file_name,gt_success);
     vector<tDetection>   det  = loadDetections(result_dir + "/data/" + file_name,
             compute_aos, eval_image, eval_ground, eval_3d, det_success);
+    cout<<gt.size()<<endl;
+    for (int ii=0; ii<gt.size(); ii++){
+      cout<<ii<<endl;
+      cout<<"gt.h:"<<gt[ii].h<<endl;
+      cout<<"det.h:"<<det[ii].h<<endl;
+      cout<<"gt.w:"<<gt[ii].w<<endl;
+      cout<<"det.w:"<<det[ii].w<<endl;
+      cout<<"gt.l:"<<gt[ii].l<<endl;
+      cout<<"det.l:"<<det[ii].l<<endl;
+      cout<<"gt.t1:"<<gt[ii].t1<<endl;
+      cout<<"det.t1:"<<det[ii].t1<<endl;
+      cout<<"gt.t2:"<<gt[ii].t2<<endl;
+      cout<<"det.t2:"<<det[ii].t2<<endl;
+      cout<<"gt.t3:"<<gt[ii].t3<<endl;
+      cout<<"det.t3:"<<det[ii].t3<<endl;
+
+    }
+    
     groundtruth.push_back(gt);
     detections.push_back(det);
 
@@ -850,62 +923,64 @@ bool eval(string gt_dir, string result_dir, Mail* mail){
   FILE *fp_det=0, *fp_ori=0;
 
   // eval image 2D bounding boxes
-  for (int c = 0; c < NUM_CLASS; c++) {
-    CLASSES cls = (CLASSES)c;
-    if (eval_image[c]) {
-      fp_det = fopen((result_dir + "/stats_" + CLASS_NAMES[c] + "_detection.txt").c_str(), "w");
-      if(compute_aos)
-        fp_ori = fopen((result_dir + "/stats_" + CLASS_NAMES[c] + "_orientation.txt").c_str(),"w");
-      vector<double> precision[3], aos[3];
-      if(   !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, imageBoxOverlap, precision[0], aos[0], EASY, IMAGE)
-         || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, imageBoxOverlap, precision[1], aos[1], MODERATE, IMAGE)
-         || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, imageBoxOverlap, precision[2], aos[2], HARD, IMAGE)) {
-        mail->msg("%s evaluation failed.", CLASS_NAMES[c].c_str());
-        return false;
-      }
-      fclose(fp_det);
-      saveAndPlotPlots(plot_dir, CLASS_NAMES[c] + "_detection", CLASS_NAMES[c], precision, 0);
-      if(compute_aos){
-        saveAndPlotPlots(plot_dir, CLASS_NAMES[c] + "_orientation", CLASS_NAMES[c], aos, 1);
-        fclose(fp_ori);
-      }
-    }
-  }
+  // for (int c = 0; c < NUM_CLASS; c++) {
+  //   CLASSES cls = (CLASSES)c;
+  //   cout<<eval_image[c]<<endl;
+  //   if (eval_image[c]) {
+  //     fp_det = fopen((result_dir + "/stats_" + CLASS_NAMES[c] + "_detection.txt").c_str(), "w");
+  //     if(compute_aos)
+  //       fp_ori = fopen((result_dir + "/stats_" + CLASS_NAMES[c] + "_orientation.txt").c_str(),"w");
+  //     vector<double> precision[3], aos[3];
+  //     if(   !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, imageBoxOverlap, precision[0], aos[0], EASY, IMAGE)
+  //        || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, imageBoxOverlap, precision[1], aos[1], MODERATE, IMAGE)
+  //        || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, imageBoxOverlap, precision[2], aos[2], HARD, IMAGE)) {
+  //       mail->msg("%s evaluation failed.", CLASS_NAMES[c].c_str());
+  //       return false;
+  //     }
+  //     fclose(fp_det);
+  //     saveAndPlotPlots(plot_dir, CLASS_NAMES[c] + "_detection", CLASS_NAMES[c], precision, 0);
+  //     if(compute_aos){
+  //       saveAndPlotPlots(plot_dir, CLASS_NAMES[c] + "_orientation", CLASS_NAMES[c], aos, 1);
+  //       fclose(fp_ori);
+  //     }
+  //   }
+  // }
 
   // don't evaluate AOS for birdview boxes and 3D boxes
   compute_aos = false;
 
   // eval bird's eye view bounding boxes
-  for (int c = 0; c < NUM_CLASS; c++) {
-    CLASSES cls = (CLASSES)c;
-    if (eval_ground[c]) {
-      fp_det = fopen((result_dir + "/stats_" + CLASS_NAMES[c] + "_detection_ground.txt").c_str(), "w");
-      vector<double> precision[3], aos[3];
-      if(   !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, groundBoxOverlap, precision[0], aos[0], EASY, GROUND)
-         || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, groundBoxOverlap, precision[1], aos[1], MODERATE, GROUND)
-         || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, groundBoxOverlap, precision[2], aos[2], HARD, GROUND)) {
-        mail->msg("%s evaluation failed.", CLASS_NAMES[c].c_str());
-        return false;
-      }
-      fclose(fp_det);
-      saveAndPlotPlots(plot_dir, CLASS_NAMES[c] + "_detection_ground", CLASS_NAMES[c], precision, 0);
-    }
-  }
+  // for (int c = 0; c < NUM_CLASS; c++) {
+  //   cout<<eval_ground[c]<<endl;
+  //   CLASSES cls = (CLASSES)c;
+  //   if (eval_ground[c]) {
+  //     fp_det = fopen((result_dir + "/stats_" + CLASS_NAMES[c] + "_detection_ground.txt").c_str(), "w");
+  //     vector<double> precision[3], aos[3];
+  //     if(   !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, groundBoxOverlap, precision[0], aos[0], EASY, GROUND)
+  //        || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, groundBoxOverlap, precision[1], aos[1], MODERATE, GROUND)
+  //        || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, groundBoxOverlap, precision[2], aos[2], HARD, GROUND)) {
+  //       mail->msg("%s evaluation failed.", CLASS_NAMES[c].c_str());
+  //       return false;
+  //     }
+  //     fclose(fp_det);
+  //     saveAndPlotPlots(plot_dir, CLASS_NAMES[c] + "_detection_ground", CLASS_NAMES[c], precision, 0);
+  //   }
+  // }
 
   // eval 3D bounding boxes
   for (int c = 0; c < NUM_CLASS; c++) {
     CLASSES cls = (CLASSES)c;
+    cout<<"============class number: ============="<<cls<<endl;
     if (eval_3d[c]) {
       fp_det = fopen((result_dir + "/stats_" + CLASS_NAMES[c] + "_detection_3d.txt").c_str(), "w");
       vector<double> precision[3], aos[3];
-      if(   !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, box3DOverlap, precision[0], aos[0], EASY, BOX3D)
-         || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, box3DOverlap, precision[1], aos[1], MODERATE, BOX3D)
-         || !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, box3DOverlap, precision[2], aos[2], HARD, BOX3D)) {
+      if( !eval_class(fp_det, fp_ori, cls, groundtruth, detections, compute_aos, box3DOverlap, precision[0], aos[0], MODERATE, BOX3D)
+         ) {
         mail->msg("%s evaluation failed.", CLASS_NAMES[c].c_str());
         return false;
       }
       fclose(fp_det);
-      saveAndPlotPlots(plot_dir, CLASS_NAMES[c] + "_detection_3d", CLASS_NAMES[c], precision, 0);
+      // saveAndPlotPlots(plot_dir, CLASS_NAMES[c] + "_detection_3d", CLASS_NAMES[c], precision, 0);
     }
   }
 
